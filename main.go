@@ -8,7 +8,10 @@ import (
 	"os"
 )
 
+var version = "dev"
+
 func main() {
+	fmt.Printf("=== Logvista Observer v-%s ===\n", version)
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, err.Error())
@@ -24,7 +27,7 @@ func main() {
 	defer watcher.Close()
 
 	// Start listening for events.
-	fmt.Printf("=== 監視を開始します: %s ===\n", logvistaDirPath)
+	fmt.Printf("監視を開始します: %s\n", logvistaDirPath)
 
 	go internal.WatchFiles(watcher, logvistaDirPath)
 
