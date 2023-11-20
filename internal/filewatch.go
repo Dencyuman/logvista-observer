@@ -92,41 +92,83 @@ func sendUpdatedLines(updatedLines []string) {
 	}
 }
 
+func clearFileContent(filePath string) error {
+    file, err := os.Create(filePath)
+    if err != nil {
+        return err
+    }
+    return file.Close()
+}
+
+func recreateFile(filePath string) error {
+    err := os.Remove(filePath)
+    if err != nil {
+        return err
+    }
+
+    _, err = os.Create(filePath)
+    return err
+}
+
+func checkAndClearLargeFile(filePath string, lastPositions map[string]int64, maxFileSize int64) bool {
+    fileInfo, err := os.Stat(filePath)
+    if err != nil {
+        log.Printf("Error getting file info: %v", err)
+        return false
+    }
+
+    if fileInfo.Size() > maxFileSize {
+        err := clearFileContent(filePath) // または recreateFile(filePath) を使用
+        if err != nil {
+            log.Printf("Failed to clear/recreate file %s: %v", filePath, err)
+            return false
+        } else {
+            log.Printf("Cleared/Recreated file %s due to size exceeding %d bytes", filePath, maxFileSize)
+            lastPositions[filePath] = 0
+            return true
+        }
+    }
+    return false
+}
+
 func WatchFiles(watcher *fsnotify.Watcher, logvistaDirPath string) {
-	lastPositions := InitLastPositions(logvistaDirPath)
-	var updatedLines []string
+    lastPositions := InitLastPositions(logvistaDirPath)
+    var updatedLines []string
 
-	ticker := time.NewTicker(time.Duration(config.AppConfig.PostInterval) * time.Second)
-	defer ticker.Stop()
+    ticker := time.NewTicker(time.Duration(config.AppConfig.PostInterval) * time.Second)
+    defer ticker.Stop()
 
-	for {
-		select {
-		case event, ok := <-watcher.Events:
-			if !ok {
-				return
-			}
-			lastPos, exists := lastPositions[event.Name]
-			if !exists {
-				lastPos = 0
-			}
-			if event.Op&fsnotify.Write == fsnotify.Write {
-				newLines, err := tailFile(event.Name, &lastPos)
-				if err != nil {
-					log.Println("Error reading from file:", err)
-				}
-				updatedLines = append(updatedLines, newLines...)
-				lastPositions[event.Name] = lastPos
-			}
-		case err, ok := <-watcher.Errors:
-			if !ok {
-				return
-			}
-			log.Println("error:", err)
-		case <-ticker.C:
-			if len(updatedLines) > 0 {
-				go sendUpdatedLines(updatedLines)
-				updatedLines = []string{}
-			}
-		}
-	}
+    for {
+        select {
+        case event, ok := <-watcher.Events:
+            if !ok {
+                return
+            }
+
+            if event.Op&fsnotify.Write == fsnotify.Write {
+                checkAndClearLargeFile(event.Name, lastPositions, 30720)
+
+                lastPos, exists := lastPositions[event.Name]
+                if !exists {
+                    lastPos = 0
+                }
+                newLines, err := tailFile(event.Name, &lastPos)
+                if err != nil {
+                    log.Println("Error reading from file:", err)
+                }
+                updatedLines = append(updatedLines, newLines...)
+                lastPositions[event.Name] = lastPos
+            }
+        case err, ok := <-watcher.Errors:
+            if !ok {
+                return
+            }
+            log.Println("error:", err)
+        case <-ticker.C:
+            if len(updatedLines) > 0 {
+                go sendUpdatedLines(updatedLines)
+                updatedLines = []string{}
+            }
+        }
+    }
 }

@@ -1,2 +1,2 @@
 server_url: http://localhost:8080/api/v1/logs/python-logvista
-post_interval: 15
+post_interval: 2
